@@ -13,6 +13,10 @@ module Mysql2
     end
   end
 
+  TIMEOUT_ERROR = Regexp.union(
+    /Timeout waiting for a response/i
+  )
+
   ResourceBusyError = Class.new(SemianError)
   CircuitOpenError = Class.new(SemianError)
 end
@@ -76,7 +80,8 @@ module Semian
         raise PingFailure, result.to_s unless result
       end
       result
-    rescue ResourceBusyError, CircuitOpenError, PingFailure
+    rescue ResourceBusyError, CircuitOpenError, PingFailure => e
+      Semian.logger.info("Mysql ping failed with error - #{e.class.name} : #{e.message}")
       false
     end
 
@@ -129,8 +134,8 @@ module Semian
     def acquire_semian_resource(**)
       super
     rescue ::Mysql2::Error => error
-      if error.is_a?(PingFailure) || (!error.is_a?(::Mysql2::SemianError) && error.message.match?(CONNECTION_ERROR))
-        semian_resource.mark_failed(error)
+      if error.is_a?(PingFailure) || error.message =~ TIMEOUT_ERROR || (!error.is_a?(::Mysql2::SemianError) && error.message.match?(CONNECTION_ERROR))
+        semian_resource.mark_failed(error) unless semian_resource.open? #check to avoid the open state marking it as failed during dryrun.
         error.semian_identifier = semian_identifier
       end
       raise
