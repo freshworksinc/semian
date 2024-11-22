@@ -12,9 +12,7 @@ module Semian
       return @semian_resource if @semian_resource
 
       case semian_options
-      when false
-        @semian_resource = UnprotectedResource.new(semian_identifier)
-      when nil
+      when nil, false
         Semian.logger.info("Semian is not configured for #{self.class.name}: #{semian_identifier}")
         @semian_resource = UnprotectedResource.new(semian_identifier)
       else
@@ -61,9 +59,17 @@ module Semian
       options = raw_semian_options
 
       symbolized_options = options && options.transform_keys(&:to_sym) # rubocop:disable Style/SafeNavigation
-      symbolized_options.tap do
-        @semian_options = symbolized_options if !symbolized_options || !symbolized_options.fetch(:dynamic, false)
+      if semian_enabled?(options)
+        symbolized_options.tap do
+          @semian_options = symbolized_options if !symbolized_options || !symbolized_options.fetch(:dynamic, false)
+        end
+      else
+        nil
       end
+    end
+
+    def semian_enabled?(options)
+      options && options['enable']
     end
 
     def raw_semian_options
