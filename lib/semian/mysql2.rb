@@ -30,6 +30,7 @@ module Semian
       /Timeout waiting for a response/i,
       /No matching servers with free connections/i,
       /Max connect timeout reached while reaching hostgroup/i,
+      /Unknown MySQL server host/i
     )
 
     ResourceBusyError = ::Mysql2::ResourceBusyError
@@ -76,7 +77,7 @@ module Semian
         raise PingFailure, result.to_s unless result
       end
       result
-    rescue ResourceBusyError, CircuitOpenError, PingFailure
+    rescue ResourceBusyError, CircuitOpenError, PingFailure => e
       false
     end
 

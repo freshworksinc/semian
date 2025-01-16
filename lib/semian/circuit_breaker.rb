@@ -35,10 +35,21 @@ module Semian
       reset
     end
 
+    # Conditions to be sure with dryrun -
+    # In open state should not call mark_failed, mark_success.
+    # In closed state Errors should be reset when there only few failures which are followed by a success.
+    # Success threshold increment and state transition to closed should only be done in half_open state.
+
     def acquire(resource = nil, &block)
       transition_to_half_open if transition_to_half_open?
 
-      raise OpenCircuitError unless request_allowed?
+      unless request_allowed?
+        if @dryrun
+          Semian.logger.info("Dryrun message: Throwing Open Circuit Error for [#{@name}]")
+        else
+          raise OpenCircuitError
+        end
+      end
 
       result = nil
       begin
@@ -64,7 +75,9 @@ module Semian
 
     def mark_failed(error)
       push_error(error)
-      push_time
+      @errors.increment
+      Semian.logger.info("Errors count is #{@errors.value}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{_error.class.name} : #{_error.message}")
+      set_last_error_time
       if closed?
         transition_to_open if error_threshold_reached?
       elsif half_open?
@@ -73,9 +86,10 @@ module Semian
     end
 
     def mark_success
+      @errors.reset
       return unless half_open?
-
       @successes.increment
+      Semian.logger.info("Incrementing success. Success count is #{@successes.value}")
       transition_to_close if success_threshold_reached?
     end
 
@@ -148,8 +162,8 @@ module Semian
     def log_state_transition(new_state)
       return if @state.nil? || new_state == @state.value
 
-      str = "[#{self.class.name}] State transition from #{@state.value} to #{new_state}."
-      str += " success_count=#{@successes.value} error_count=#{@errors.size}"
+      str = "[#{self.class.name}] State transition for [#{@name}] from #{@state.value} to #{new_state} at #{occur_time}."
+      str += " success_count=#{@successes.value} error_count=#{@errors.value}"
       str += " success_count_threshold=#{@success_count_threshold}"
       str += " error_count_threshold=#{@error_count_threshold}"
       str += " error_timeout=#{@error_timeout} error_last_at=\"#{@errors.last}\""

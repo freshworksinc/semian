@@ -100,6 +100,8 @@ module Semian
   TimeoutError = Class.new(BaseError)
   InternalError = Class.new(BaseError)
   OpenCircuitError = Class.new(BaseError)
+  StateTransitionNotice = Class.new(BaseError)
+  DryRunOpenCircuitNotice = Class.new(BaseError)
   SemaphoreMissingError = Class.new(BaseError)
 
   attr_accessor :maximum_lru_size, :minimum_lru_time, :default_permissions, :namespace
@@ -138,7 +140,26 @@ module Semian
 
   attr_accessor :logger
 
-  self.logger = Logger.new($stderr)
+  class LoggerPatch
+    def info(str)
+      log_to_new_relic(str)
+    end
+    def log_to_new_relic str
+      error = nil
+      if str.include? "Throwing Open Circuit Error"
+        error = DryRunOpenCircuitNotice.new
+        str = str + " #{Time.now}"
+      elsif str.include? "State transition"
+        error = StateTransitionNotice.new
+      end
+      str = str + ". PID: #{Process.pid}"
+      Rails.logger.info(str) if Rails.logger
+      if error
+        NewRelic::Agent.notice_error(error, {:message => "#{str}"})
+      end
+    end
+  end
+  self.logger = LoggerPatch.new
 
   # Registers a resource.
   #
