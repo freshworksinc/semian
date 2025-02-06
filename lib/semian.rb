@@ -153,7 +153,7 @@ module Semian
         error = StateTransitionNotice.new
       end
       str = str + ". PID: #{Process.pid}"
-      Rails.logger.info(str) if Rails.logger
+      ::Rails.logger.info(str) if ::Rails.logger
       if error
         NewRelic::Agent.notice_error(error, {:message => "#{str}"})
       end

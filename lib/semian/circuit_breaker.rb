@@ -86,8 +86,9 @@ module Semian
     end
 
     def mark_success
-      @errors.reset
       return unless half_open?
+
+      @errors.reset
       @successes.increment
       Semian.logger.info("Incrementing success. Success count is #{@successes.value}")
       transition_to_close if success_threshold_reached?
