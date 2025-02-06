@@ -77,7 +77,7 @@ module Semian
         raise PingFailure, result.to_s unless result
       end
       result
-    rescue ResourceBusyError, CircuitOpenError, PingFailure => e
+    rescue ResourceBusyError, CircuitOpenError, PingFailure
       false
     end
 
