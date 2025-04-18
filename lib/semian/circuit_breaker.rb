@@ -17,7 +17,7 @@ module Semian
 
     def initialize(name, exceptions:, success_threshold:, error_threshold:,
       error_timeout:, implementation:, half_open_resource_timeout: nil,
-      error_threshold_timeout: nil, error_threshold_timeout_enabled: true)
+      error_threshold_timeout: nil, error_threshold_timeout_enabled: true, dryrun:)
 
       @name = name.to_sym
       @success_count_threshold = success_threshold
@@ -27,18 +27,18 @@ module Semian
       @error_timeout = error_timeout
       @exceptions = exceptions
       @half_open_resource_timeout = half_open_resource_timeout
+      @dryrun = dryrun
 
-      @errors = implementation::SlidingWindow.new(max_size: @error_count_threshold)
+      @errors = implementation::Error.new
       @successes = implementation::Integer.new
       @state = implementation::State.new
 
       reset
     end
 
-    # Conditions to be sure with dryrun -
-    # In open state should not call mark_failed, mark_success.
-    # In closed state Errors should be reset when there only few failures which are followed by a success.
-    # Success threshold increment and state transition to closed should only be done in half_open state.
+    # Conditions to check with dryrun
+    # In open state should not calle mark_failed, mark_success.
+    # mark_success should only be called during half_open state.
 
     def acquire(resource = nil, &block)
       transition_to_half_open if transition_to_half_open?
@@ -56,11 +56,11 @@ module Semian
         result = maybe_with_half_open_resource_timeout(resource, &block)
       rescue *@exceptions => error
         if !error.respond_to?(:marks_semian_circuits?) || error.marks_semian_circuits?
-          mark_failed(error)
+          mark_failed(error) unless open?
         end
         raise error
       else
-        mark_success
+        mark_success unless open?
       end
       result
     end
@@ -95,7 +95,7 @@ module Semian
     end
 
     def reset
-      @errors.clear
+      @errors.reset
       @successes.reset
       transition_to_close
     end
@@ -114,21 +114,23 @@ module Semian
 
     def transition_to_close
       notify_state_transition(:closed)
-      log_state_transition(:closed)
+      log_state_transition(:closed, Time.now)
       @state.close!
-      @errors.clear
+      @errors.reset
+      @successes.reset
     end
 
     def transition_to_open
       notify_state_transition(:open)
-      log_state_transition(:open)
+      log_state_transition(:open, Time.now)
       @state.open!
     end
 
     def transition_to_half_open
       notify_state_transition(:half_open)
-      log_state_transition(:half_open)
+      log_state_transition(:half_open, Time.now)
       @state.half_open!
+      @errors.reset
       @successes.reset
     end
 
@@ -137,37 +139,30 @@ module Semian
     end
 
     def error_threshold_reached?
-      @errors.size == @error_count_threshold
+      @errors.value >= @error_count_threshold
     end
 
     def error_timeout_expired?
-      last_error_time = @errors.last
-      return false unless last_error_time
-
-      last_error_time + @error_timeout < Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return false unless @errors.last_error_time
+      Time.at(@errors.last_error_time) + @error_timeout < Time.now
     end
 
     def push_error(error)
       @last_error = error
     end
 
-    def push_time
-      time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      if error_threshold_timeout_enabled
-        @errors.reject! { |err_time| err_time + @error_threshold_timeout < time }
-      end
-
-      @errors << time
+    def set_last_error_time(time: Time.now)
+      @errors.last_error_at(time.to_i)
     end
 
-    def log_state_transition(new_state)
+    def log_state_transition(new_state, occur_time)
       return if @state.nil? || new_state == @state.value
 
       str = "[#{self.class.name}] State transition for [#{@name}] from #{@state.value} to #{new_state} at #{occur_time}."
       str += " success_count=#{@successes.value} error_count=#{@errors.value}"
       str += " success_count_threshold=#{@success_count_threshold}"
       str += " error_count_threshold=#{@error_count_threshold}"
-      str += " error_timeout=#{@error_timeout} error_last_at=\"#{@errors.last}\""
+      str += " error_timeout=#{@error_timeout} error_last_at=\"#{@errors.last_error_time ? Time.at(@errors.last_error_time) : ''}\""
       str += " name=\"#{@name}\""
       if new_state == :open && @last_error
         str += " last_error_message=#{@last_error.message.inspect}"

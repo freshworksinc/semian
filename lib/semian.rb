@@ -15,6 +15,7 @@ require "semian/unprotected_resource"
 require "semian/simple_sliding_window"
 require "semian/simple_integer"
 require "semian/simple_state"
+require 'semian/simple_error'
 require "semian/lru_hash"
 
 #
@@ -100,8 +101,7 @@ module Semian
   TimeoutError = Class.new(BaseError)
   InternalError = Class.new(BaseError)
   OpenCircuitError = Class.new(BaseError)
-  StateTransitionNotice = Class.new(BaseError)
-  DryRunOpenCircuitNotice = Class.new(BaseError)
+  StateTransitionError = Class.new(BaseError)
   SemaphoreMissingError = Class.new(BaseError)
 
   attr_accessor :maximum_lru_size, :minimum_lru_time, :default_permissions, :namespace
@@ -146,13 +146,12 @@ module Semian
     end
     def log_to_new_relic str
       error = nil
-      if str.include? "Throwing Open Circuit Error"
-        error = DryRunOpenCircuitNotice.new
+      if str == "Throwing Open Circuit Error"
+        error = OpenCircuitError.new
         str = str + " #{Time.now}"
-      elsif str.include? "State transition"
-        error = StateTransitionNotice.new
+      elsif str.include? "State transition from"
+        error = StateTransitionError.new
       end
-      str = str + ". PID: #{Process.pid}"
       ::Rails.logger.info(str) if ::Rails.logger
       if error
         NewRelic::Agent.notice_error(error, {:message => "#{str}"})
@@ -334,6 +333,7 @@ module Semian
       exceptions: Array(exceptions) + [::Semian::BaseError],
       half_open_resource_timeout: options[:half_open_resource_timeout],
       implementation: implementation(**options),
+      dryrun: options[:dryrun].nil? ? true : options[:dryrun]
     )
   end
 
