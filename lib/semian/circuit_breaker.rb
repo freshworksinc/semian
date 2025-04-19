@@ -75,8 +75,7 @@ module Semian
 
     def mark_failed(error)
       push_error(error)
-      @errors.increment
-      Semian.logger.info("Errors count is #{@errors.value}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{_error.class.name} : #{_error.message}")
+      Semian.logger.info("Errors count is #{@errors.size}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{error.class.name} : #{error.message}")
       set_last_error_time
       if closed?
         transition_to_open if error_threshold_reached?
