@@ -152,7 +152,7 @@ module Semian
       elsif str.include? "State transition from"
         error = StateTransitionError.new
       end
-      Rails.logger.info(str)
+      ::Rails.logger.info(str) if ::Rails.logger
       if error
         NewRelic::Agent.notice_error(error, {:message => "#{str}"})
       end

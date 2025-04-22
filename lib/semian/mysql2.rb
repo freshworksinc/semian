@@ -13,10 +13,6 @@ module Mysql2
     end
   end
 
-  TIMEOUT_ERROR = Regexp.union(
-    /Timeout waiting for a response/i
-  )
-
   ResourceBusyError = Class.new(SemianError)
   CircuitOpenError = Class.new(SemianError)
 end
@@ -32,8 +28,14 @@ module Semian
       /Too many connections/i,
       /closed MySQL connection/i,
       /Timeout waiting for a response/i,
+      /MySQL client is not connected/i,
       /No matching servers with free connections/i,
       /Max connect timeout reached while reaching hostgroup/i,
+      /Unknown MySQL server host/i
+    )
+
+    TIMEOUT_ERROR = Regexp.union(
+      /Timeout waiting for a response/i
     )
 
     ResourceBusyError = ::Mysql2::ResourceBusyError

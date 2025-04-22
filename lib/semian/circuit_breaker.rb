@@ -45,7 +45,7 @@ module Semian
 
       unless request_allowed?
         if @dryrun
-          Semian.logger.info("Throwing Open Circuit Error")
+          Semian.logger.info("Dryrun message: Throwing Open Circuit Error for [#{@name}]")
         else
           raise OpenCircuitError
         end
@@ -75,8 +75,7 @@ module Semian
 
     def mark_failed(error)
       push_error(error)
-      Semian.logger.info("Marking resource failure in Semian - #{_error.class.name} : #{_error.message}")
-      @errors.increment
+      Semian.logger.info("Errors count is #{@errors.size}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{error.class.name} : #{error.message}")
       set_last_error_time
       if closed?
         transition_to_open if error_threshold_reached?
@@ -90,6 +89,7 @@ module Semian
 
       @errors.reset
       @successes.increment
+      Semian.logger.info("Incrementing success. Success count is #{@successes.value}")
       transition_to_close if success_threshold_reached?
     end
 
@@ -157,7 +157,7 @@ module Semian
     def log_state_transition(new_state, occur_time)
       return if @state.nil? || new_state == @state.value
 
-      str = "[#{self.class.name}] State transition from #{@state.value} to #{new_state} at #{occur_time}."
+      str = "[#{self.class.name}] State transition for [#{@name}] from #{@state.value} to #{new_state} at #{occur_time}."
       str += " success_count=#{@successes.value} error_count=#{@errors.value}"
       str += " success_count_threshold=#{@success_count_threshold}"
       str += " error_count_threshold=#{@error_count_threshold}"
