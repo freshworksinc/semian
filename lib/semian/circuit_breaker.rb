@@ -29,7 +29,7 @@ module Semian
       @half_open_resource_timeout = half_open_resource_timeout
       @dryrun = dryrun
 
-      @errors = implementation::Error.new
+      @errors = implementation::SlidingWindow.new(max_size: @error_count_threshold)
       @successes = implementation::Integer.new
       @state = implementation::State.new
 
@@ -76,7 +76,6 @@ module Semian
     def mark_failed(error)
       push_error(error)
       Semian.logger.info("Errors count is #{@errors.size}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{error.class.name} : #{error.message}")
-      set_last_error_time
       if closed?
         transition_to_open if error_threshold_reached?
       elsif half_open?
@@ -87,14 +86,14 @@ module Semian
     def mark_success
       return unless half_open?
 
-      @errors.reset
+      @errors.clear
       @successes.increment
       Semian.logger.info("Incrementing success. Success count is #{@successes.value}")
       transition_to_close if success_threshold_reached?
     end
 
     def reset
-      @errors.reset
+      @errors.clear
       @successes.reset
       transition_to_close
     end
@@ -115,7 +114,7 @@ module Semian
       notify_state_transition(:closed)
       log_state_transition(:closed, Time.now)
       @state.close!
-      @errors.reset
+      @errors.clear
       @successes.reset
     end
 
@@ -129,7 +128,7 @@ module Semian
       notify_state_transition(:half_open)
       log_state_transition(:half_open, Time.now)
       @state.half_open!
-      @errors.reset
+      @errors.clear
       @successes.reset
     end
 
@@ -138,30 +137,26 @@ module Semian
     end
 
     def error_threshold_reached?
-      @errors.value >= @error_count_threshold
+      @errors.size >= @error_count_threshold
     end
 
     def error_timeout_expired?
-      return false unless @errors.last_error_time
-      Time.at(@errors.last_error_time) + @error_timeout < Time.now
+      return false unless @errors.last
+      Time.at(@errors.last) + @error_timeout < Time.now
     end
 
     def push_error(error)
       @last_error = error
     end
 
-    def set_last_error_time(time: Time.now)
-      @errors.last_error_at(time.to_i)
-    end
-
     def log_state_transition(new_state, occur_time)
       return if @state.nil? || new_state == @state.value
 
       str = "[#{self.class.name}] State transition for [#{@name}] from #{@state.value} to #{new_state} at #{occur_time}."
-      str += " success_count=#{@successes.value} error_count=#{@errors.value}"
+      str += " success_count=#{@successes.value} error_count=#{@errors.size}"
       str += " success_count_threshold=#{@success_count_threshold}"
       str += " error_count_threshold=#{@error_count_threshold}"
-      str += " error_timeout=#{@error_timeout} error_last_at=\"#{@errors.last_error_time ? Time.at(@errors.last_error_time) : ''}\""
+      str += " error_timeout=#{@error_timeout} error_last_at=\"#{@errors.last ? Time.at(@errors.last) : ''}\""
       str += " name=\"#{@name}\""
       if new_state == :open && @last_error
         str += " last_error_message=#{@last_error.message.inspect}"
