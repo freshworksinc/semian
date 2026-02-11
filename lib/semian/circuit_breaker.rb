@@ -74,6 +74,7 @@ module Semian
     end
 
     def mark_failed(error)
+      push_time
       push_error(error)
       Semian.logger.info("Errors count is #{@errors.size}. Current state is #{@state.value}. Marking resource failure in Semian for [#{@name}]- #{error.class.name} : #{error.message}")
       if closed?
@@ -147,6 +148,15 @@ module Semian
 
     def push_error(error)
       @last_error = error
+    end
+
+    def push_time
+      time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      if error_threshold_timeout_enabled
+        @errors.reject! { |err_time| err_time + @error_threshold_timeout < time }
+      end
+
+      @errors << time
     end
 
     def log_state_transition(new_state, occur_time)
