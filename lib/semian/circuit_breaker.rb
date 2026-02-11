@@ -142,8 +142,10 @@ module Semian
     end
 
     def error_timeout_expired?
-      return false unless @errors.last
-      Time.at(@errors.last) + @error_timeout < Time.now
+      last_error_time = @errors.last
+      return false unless last_error_time
+
+      last_error_time + @error_timeout < Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def push_error(error)
